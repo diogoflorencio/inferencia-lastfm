@@ -66,11 +66,9 @@ reamostragens = tibble(i = 1:repeticoes) %>%
   mutate(theta_c_s = map_dbl(i, ~ um_bootstrap(lastfm)))
 
 ci_amostragens = reamostragens %>% 
-  mutate(erro = theta_c_s - theta_c) %>% 
-  mutate(conf.low = theta_c + quantile(erro, .05), 
-         conf.high = theta_c + quantile(erro, .95), 
-         statistic = theta_c) %>% 
-  select(conf.low, statistic, conf.high)
+  mutate(conf.low = theta_c + quantile((theta_c_s - theta_c), .05), 
+         conf.high = theta_c + quantile((theta_c_s - theta_c), .95), 
+         statistic = theta_c)
 ```
 
 ```{r}
@@ -125,19 +123,16 @@ grid.arrange(p1, p2, ncol = 2)
 2. Para os usuários que gostam muito de música pop (mediana_pop > 5), qual a correlação entre a popularidade mediana dos artistas escutado e a proporção dos artistas escutados que eram novos. 
 
 ```{r}
-gamma_c <-  lastfm %>% 
+lastfm <-  lastfm %>% 
   filter(mediana_pop > 5) 
 
-cor(gamma_c, mediana_pop, prop_news, method = "pearson", use = c("complete.obs"))
-
-repeticoes = 5000 # pelo menos 2000, mas mais não faz mal.
+gamma_c <- cor(lastfm$mediana_pop, lastfm$prop_news, method = "pearson")
 
 um_bootstrap <- function(x){
-  prop_news = x %>% pull(prop_news)
-  boot_x <- sample(prop_news,           # amostre dos dados
-                   size = NROW(prop_news), # tamanho igual ao recebido
+  boot_x <- sample(x,           # amostre dos dados
+                   size = NROW(x), # tamanho igual ao recebido
                    replace = TRUE) # aqui é o bootstrap
-  return(mean(boot_x))
+  return(cor(boot_x$mediana_pop, boot_x$prop_news, method = "pearson"))
 }
 
 # A REAMOSTRAGEM
@@ -145,11 +140,58 @@ reamostragens = tibble(i = 1:repeticoes) %>%
   mutate(theta_c_s = map_dbl(i, ~ um_bootstrap(lastfm)))
 
 ci_amostragens = reamostragens %>% 
-  mutate(erro = theta_c_s - theta_c) %>% 
-  mutate(conf.low = theta_c + quantile(erro, .05), 
-         conf.high = theta_c + quantile(erro, .95), 
-         statistic = theta_c) %>% 
-  select(conf.low, statistic, conf.high)
+  mutate(conf.low = theta_c + quantile((theta_c_s - theta_c), .05), 
+         conf.high = theta_c + quantile((theta_c_s - theta_c), .95), 
+         statistic = theta_c) 
+
+```
+
+```{r}
+funcao_theta_boot = function(df, i) {
+  df <- df %>% slice(i) 
+  cor(df$mediana_pop, df$prop_news, method = "pearson")
+}
+
+booted <- boot(data = lastfm, 
+               statistic = funcao_theta_boot, 
+               R = 5000)
+
+ci_boot = tidy(booted, 
+          conf.level = .95,
+          conf.method = "bca",
+          conf.int = TRUE) %>% 
+    select(conf.low, statistic, conf.high)
+
+```
+
+```{r}
+p1 = ci_amostragens %>%
+    ggplot(aes(
+        x = "",
+        y = statistic,
+        ymin = conf.low,
+        ymax = conf.high
+    )) +
+    geom_pointrange() +
+    geom_point(size = 3) + 
+    labs(x = "Código", 
+         y = "Proporção de novos artistas")+ 
+    ylim(.235, .265)
+
+p2 = ci_boot %>%
+    ggplot(aes(
+        x = "",
+        y = statistic,
+        ymin = conf.low,
+        ymax = conf.high
+    )) +
+    geom_pointrange() +
+    geom_point(size = 3) + 
+    labs(x = "Bootstrap", 
+         y = "Proporção de novos artistas") + 
+    ylim(.235, .265)
+
+grid.arrange(p1, p2, ncol = 2)
 
 ```
 
